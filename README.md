@@ -1,74 +1,54 @@
-# GhostChat - Secure P2P Chat over Tor
+# GhostChat - Secure P2P Chat over Tor & I2P
 
 GhostChat is a terminal-based P2P chat application that uses Tor Onion Services for anonymity and GPG for end-to-end encryption. It allows you to chat with friends securely without relying on central servers.
 
 ## Features
-- **Anonymous:** Uses Tor Onion Services (Hidden Services) to hide your IP address.
-- **Secure:** End-to-End Encrypted using GPG.
-- **P2P:** Direct connection to your friend's onion address.
+- **Anonymous:** Uses Tor Onion Services (Hidden Services) or I2P to hide your IP address.
+- **Secure:** End-to-End Encrypted using GPG (RSA 2048-bit).
+- **P2P:** Direct connection to your friend's onion or i2p address.
 - **Friend Management:** Whitelist-based friend system using GPG keys.
+- **Image Sharing:** Send and receive images securely.
+- **Groupchats:** Create, manage, and delete private group conversations.
+- **Persistent Sessions:** "Enter" a chat or group to talk naturally without repeating commands.
+- **Local Discovery:** Scan your local network (WiFi) to find other GhostChat users.
+- **Network Agnostic:** Switch between Tor, I2P, or use both simultaneously.
+
+## 🚀 What's New in V1.3 (Major Update)
+- **Persistent Chat Sessions:** No more typing `/chat` for every message! Enter a "room" with `/chat <name>` or `/gc_chat <name>` and talk freely. Use `/goback` to exit.
+- **Full Groupchat Suite:** Create (`/gc_create`), Chat (`/gc_chat`), Kick members (`/gc_kick`), and Delete groups (`/gc_delete`).
+- **I2P & Multi-Network Support:** Switch between Tor and I2P or use `both` for maximum delivery reliability.
+- **Local Network Discovery:** Use `/scan` to find peers on your current WiFi for "nearby" chatting without sharing onion addresses first.
+- **Image Sharing:** Send images with `/sendimg`. Received images are automatically saved and opened.
+- **Redesigned UI:** A beautiful, categorized `/help` menu and customizable terminal colors via `/colors`.
+- **Better Navigation:** Full arrow-key support for command editing and a `/clear` command to keep your terminal tidy.
+- **Termux Optimization:** Improved bootstrap logic with a 10-minute timeout to ensure stable connections on mobile data.
 
 ## Prerequisites
 
 1. **Python 3.x**
-2. **Tor:** You must have the `tor` executable installed on your system.
-   - Debian/Ubuntu: `sudo apt install tor`
-   - macOS: `brew install tor`
-   - Termux (Android): `pkg install tor`
-3. **GnuPG:** Ensure `gpg` is installed.
-   - Termux (Android): `pkg install gnupg`
+2. **Tor:** `pkg install tor` (Termux) or `sudo apt install tor` (Linux).
+3. **GnuPG:** `pkg install gnupg` (Termux) or `sudo apt install gnupg` (Linux).
+4. **I2P (Optional):** Requires `i2pd` running for I2P features.
 
 ## Installation
 
-### Desktop (Linux/macOS)
-1. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Termux (Android)
-1. Install system packages:
-   ```bash
-   pkg update
-   pkg install python tor gnupg
-   ```
-2. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. (Optional) Setup storage to import keys from your phone:
-   ```bash
-   termux-setup-storage
-   ```
-   *Your phone's downloads will then be accessible at `~/storage/downloads/`.*
+```bash
+pip install -r requirements.txt
+```
 
 ## Usage
 
-1. Start the chat:
-   ```bash
-   python ghostchat.py
-   ```
-   *Note: The first time you run it, it will take a minute to launch Tor and generate a GPG key.*
+1. **Start:** `python ghostchat.py`
+2. **Identify:** `/myinfo` shows your address. Share the `my_key.asc` file with friends.
+3. **Connect:** `/add <name> <address> <key_path>`
+4. **Chat:** `/chat <name>` or `/gc_chat <group_name>` to enter a session.
+5. **Exit Session:** `/goback` or `/exit` returns you to the main menu.
+6. **Discover:** `/scan` to find users on your local WiFi.
 
-2. **Get your info:**
-   Type `/myinfo` to see your Onion Address and GPG Fingerprint. A `my_key.asc` file will be created. Share this file and your onion address with your friend securely.
+## ⚠️ Important Note on Key Management
+For better security and to avoid GPG import conflicts, **DO NOT** store your friends' `.asc` key files inside the `GhostChat` main directory or the `ghostchat_data` folder. 
 
-3. **Add a friend:**
-   Get your friend's Onion Address and their Public Key file (e.g., `friend_key.asc`).
-   ```
-   /add <friend_name> <friend_onion_address> <path_to_key_file>
-   ```
-   Example:
-   ```
-   /add alice 2g7...xyz.onion alice_key.asc
-   ```
+Keep them in a separate folder (e.g., `~/Downloads/keys/`) and provide the full path when using the `/add` command.
 
-4. **Chat:**
-   ```
-   /chat <friend_name> Hello secure world!
-   ```
-
-## Troubleshooting
-
-- **Tor startup failed:** Ensure `tor` is in your system PATH. If it's in `/usr/sbin/`, add it to your PATH or symlink it.
-- **Connection failed:** Tor connections can be slow. Ensure your friend is online and their GhostChat is running. Initial connections can take up to a minute.
+---
+*Fed's won't find us here.*
