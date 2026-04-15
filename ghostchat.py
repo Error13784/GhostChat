@@ -42,23 +42,73 @@ os.chmod(GPG_DIR, 0o700)
 
 class GhostChat:
     def __init__(self):
-        self.gpg = gnupg.GPG(gnupghome=GPG_DIR)
+        # Setup colors first
+        self.config = self.load_config()
+        self._set_colors()
+        
+        # Check dependencies and find binaries
+        self.gpg_path = self._find_gpg_executable()
+        self.tor_path = self._find_tor_executable()
+        self.check_dependencies()
+
+        # Initialize GPG with explicit path
+        self.gpg = gnupg.GPG(gnupghome=GPG_DIR, gpgbinary=self.gpg_path)
+        
         self.tor_process = None
         self.controller = None
         self.onion_address = None
         self.friends = self.load_friends()
         self.groups = self.load_groups()
-        self.config = self.load_config()
         self.my_fingerprint = None
         self.current_chat = None
         self.current_group = None
         self.nearby_peers = {} # For /scan
         
-        # Setup colors
-        self._set_colors()
-        
         # Setup GPG
         self.setup_gpg()
+
+    def check_dependencies(self):
+        missing = []
+        if not self.gpg_path:
+            missing.append("gnupg (gpg or gpg2)")
+        if not self.tor_path:
+            missing.append("tor")
+        
+        if missing:
+            print(f"{self.colors['error']}[!] Missing required system dependencies: {', '.join(missing)}")
+            print(f"{self.colors['info']}[*] Installation tips:")
+            print(f"    - Fedora/RHEL: sudo dnf install gpg tor")
+            print(f"    - Debian/Ubuntu: sudo apt install gnupg tor")
+            print(f"    - Arch Linux: sudo pacman -S gnupg tor")
+            print(f"    - macOS: brew install gnupg tor")
+            sys.exit(1)
+
+    def _find_gpg_executable(self):
+        for cmd in ["gpg2", "gpg"]:
+            path = shutil.which(cmd)
+            if path:
+                return path
+        common_paths = ["/usr/bin/gpg", "/usr/bin/gpg2", "/usr/local/bin/gpg", "/opt/homebrew/bin/gpg"]
+        for path in common_paths:
+            if os.path.exists(path) and os.access(path, os.X_OK):
+                return path
+        return None
+
+    def _find_tor_executable(self):
+        tor_path = shutil.which("tor")
+        if tor_path:
+            return tor_path
+        common_paths = [
+            "/usr/bin/tor",
+            "/usr/sbin/tor", 
+            "/usr/local/bin/tor", 
+            "/opt/homebrew/bin/tor",
+            "/data/data/com.termux/files/usr/bin/tor"
+        ]
+        for path in common_paths:
+            if os.path.exists(path) and os.access(path, os.X_OK):
+                return path
+        return None
 
     def _set_colors(self):
         self.colors = {
@@ -340,31 +390,22 @@ class GhostChat:
                 no_protection=True
             )
             key = self.gpg.gen_key(input_data)
+            if not key.fingerprint:
+                print(f"{self.colors['error']}[!] GPG Key generation failed!")
+                print(f"{self.colors['error']}    Status: {key.status}")
+                print(f"{self.colors['error']}    Stderr: {key.stderr}")
+                if "keybox" in (key.stderr or "").lower():
+                    print(f"{self.colors['info']}[*] Tip: On Fedora, try running 'gpgconf --kill keyboxd' and try again.")
+                sys.exit(1)
             self.my_fingerprint = key.fingerprint
             print(f"{self.colors['success']}[+] Key generated: {self.my_fingerprint}")
         else:
             self.my_fingerprint = keys[0]['fingerprint']
             print(f"{self.colors['success']}[+] Loaded existing key: {self.my_fingerprint}")
 
-    def _find_tor_executable(self):
-        tor_path = shutil.which("tor")
-        if tor_path:
-            return tor_path
-        common_paths = [
-            "/usr/sbin/tor", 
-            "/usr/local/bin/tor", 
-            "/opt/homebrew/bin/tor",
-            "/data/data/com.termux/files/usr/bin/tor"
-        ]
-        for path in common_paths:
-            if os.path.exists(path) and os.access(path, os.X_OK):
-                return path
-        return None
-
     def start_tor(self):
         print(f"{self.colors['warn']}[*] Launching Tor... (This can take a minute)")
-        tor_cmd = self._find_tor_executable()
-        if not tor_cmd:
+        if not self.tor_path:
             print(f"{self.colors['error']}[!] 'tor' executable not found.")
             sys.exit(1)
 
@@ -377,7 +418,7 @@ class GhostChat:
                     'HiddenServiceDir': os.path.join(TOR_DIR, 'hs'),
                     'HiddenServicePort': f'{ONION_PORT} 127.0.0.1:{APP_PORT}',
                 },
-                tor_cmd=tor_cmd,
+                tor_cmd=self.tor_path,
                 take_ownership=True,
                 timeout=600, # 10 minute timeout for Termux
                 init_msg_handler=lambda line: print(f"{Fore.CYAN}[Tor] {line}") if "Bootstrapped" in line else None,
