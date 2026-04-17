@@ -125,7 +125,7 @@ class GhostChat:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'r') as f:
                 return json.load(f)
-        return {"username": "Ghost", "colors": {}, "network": "tor"}
+        return {"username": "Ghost", "colors": {}, "network": "tor", "bridge": None}
 
     def save_config(self):
         with open(CONFIG_FILE, 'w') as f:
@@ -364,16 +364,28 @@ class GhostChat:
                     s.close()
                     print(f"{self.colors['success']}[+] Sent to {name} via {label}!")
                     return True
-                except:
+                except Exception as e:
+                    if "timed out" in str(e).lower():
+                         print(f"{self.colors['error']}[!] Timeout connecting to {name} via {label}. Friend might be offline or circuit failed.")
+                    else:
+                         print(f"{self.colors['error']}[!] Connection failed to {name} via {label}: {e}")
                     return False
 
             if net_mode in ['tor', 'both']:
-                if _try_send(TOR_SOCKS_PORT, "Tor"):
-                    success = True
+                try:
+                    if _try_send(TOR_SOCKS_PORT, "Tor"):
+                        success = True
+                except KeyboardInterrupt:
+                    print(f"\n{self.colors['warn']}[!] Sending cancelled by user.")
+                    return
             
             if not success and net_mode in ['i2p', 'both']:
-                if _try_send(I2P_SOCKS_PORT, "I2P"):
-                    success = True
+                try:
+                    if _try_send(I2P_SOCKS_PORT, "I2P"):
+                        success = True
+                except KeyboardInterrupt:
+                    print(f"\n{self.colors['warn']}[!] Sending cancelled by user.")
+                    return
 
             if not success:
                 print(f"{self.colors['error']}[!] Failed to send to {name}")
@@ -409,15 +421,28 @@ class GhostChat:
             print(f"{self.colors['error']}[!] 'tor' executable not found.")
             sys.exit(1)
 
+        tor_config = {
+            'SocksPort': str(TOR_SOCKS_PORT),
+            'ControlPort': str(TOR_CONTROL_PORT),
+            'DataDirectory': TOR_DIR,
+            'HiddenServiceDir': os.path.join(TOR_DIR, 'hs'),
+            'HiddenServicePort': f'{ONION_PORT} 127.0.0.1:{APP_PORT}',
+        }
+        
+        if self.config.get('bridge'):
+            print(f"{self.colors['info']}[*] Using Bridge: {self.config['bridge'][:20]}...")
+            tor_config['UseBridges'] = '1'
+            tor_config['Bridge'] = self.config['bridge']
+            if 'obfs4' in self.config['bridge']:
+                obfs4_path = shutil.which('obfs4proxy') or '/usr/bin/obfs4proxy'
+                if os.path.exists(obfs4_path):
+                    tor_config['ClientTransportPlugin'] = f'obfs4 exec {obfs4_path}'
+                else:
+                    print(f"{self.colors['error']}[!] obfs4proxy not found. obfs4 bridges might not work.")
+
         try:
             self.tor_process = launch_tor_with_config(
-                config={
-                    'SocksPort': str(TOR_SOCKS_PORT),
-                    'ControlPort': str(TOR_CONTROL_PORT),
-                    'DataDirectory': TOR_DIR,
-                    'HiddenServiceDir': os.path.join(TOR_DIR, 'hs'),
-                    'HiddenServicePort': f'{ONION_PORT} 127.0.0.1:{APP_PORT}',
-                },
+                config=tor_config,
                 tor_cmd=self.tor_path,
                 take_ownership=True,
                 timeout=600, # 10 minute timeout for Termux
@@ -485,6 +510,8 @@ class GhostChat:
         print(f"{self.colors['info']}│  {c1}/myinfo{c2}           - Show your onion address and GPG key  │")
         print(f"{self.colors['info']}│  {c1}/setname <name>{c2}   - Change your display username         │")
         print(f"{self.colors['info']}│  {c1}/network <mode>{c2}   - Switch network (tor, i2p, both)      │")
+        print(f"{self.colors['info']}│  {c1}/bridge <line>{c2}    - Use a Tor Bridge (bypass VPN block)  │")
+        print(f"{self.colors['info']}│  {c1}/status{c2}           - Check Tor connection status          │")
         print(f"{self.colors['info']}│  {c1}/colors{c2}           - Customize your chat colors           │")
         print(f"{self.colors['info']}│  {c1}/clear{c2}            - Clear the terminal screen            │")
         print(f"{self.colors['info']}│  {c1}/quit{c2}             - Exit GhostChat                       │")
@@ -651,6 +678,28 @@ class GhostChat:
                         self.send_message(target, msg, image_path=parts[img_idx])
                     else:
                         print(f"{self.colors['error']}Usage: /sendimg [name] <path> [message]")
+                elif cmd == "/status":
+                    if self.controller:
+                        try:
+                            bootstrap_phase = self.controller.get_info("status/bootstrap-phase")
+                            print(f"{self.colors['info']}[*] Tor Status: {bootstrap_phase}")
+                            circuits = self.controller.get_circuits()
+                            print(f"{self.colors['info']}[*] Active Circuits: {len(circuits)}")
+                            if not circuits:
+                                print(f"{self.colors['warn']}[!] No active circuits. Tor might be struggling to connect.")
+                        except Exception as e:
+                            print(f"{self.colors['error']}[!] Could not get Tor status: {e}")
+                    else:
+                        print(f"{self.colors['error']}[!] Tor controller not available.")
+                elif cmd == "/bridge":
+                    if len(parts) > 1:
+                        self.config['bridge'] = " ".join(parts[1:])
+                        self.save_config()
+                        print(f"{self.colors['success']}[+] Bridge set! Restart GhostChat to apply.")
+                    else:
+                        self.config['bridge'] = None
+                        self.save_config()
+                        print(f"{self.colors['success']}[+] Bridge cleared! Restart GhostChat to apply.")
                 elif cmd == "/network" and len(parts) > 1:
                     self.set_network(parts[1])
                 elif cmd == "/gc_create" and len(parts) > 2:
