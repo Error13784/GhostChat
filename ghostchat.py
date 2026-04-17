@@ -250,27 +250,41 @@ class GhostChat:
                     sender_defined_username = payload.get('u', 'Ghost')
                     image_data = payload.get('i', None)
                     group_id = payload.get('g', None)
+                    sender_onion = payload.get('o', None)
                 except:
                     msg_text = decrypted.data.decode()
                     sender_defined_username = "Unknown"
                     image_data = None
                     group_id = None
+                    sender_onion = None
 
                 sender_name = "Unknown"
                 if decrypted.fingerprint:
                     for name, f_data in self.friends.items():
                         if f_data['fingerprint'] == decrypted.fingerprint:
                             sender_name = name
+                            # Auto-update onion address if it changed
+                            if sender_onion and f_data['onion'] != sender_onion:
+                                self.friends[name]['onion'] = sender_onion
+                                self.save_friends()
+                                print(f"{self.colors['success']}\n[*] Updated onion address for {name} automatically!")
                             break
+                    
                     if sender_name == "Unknown":
-                        sender_name = f"ID:{decrypted.fingerprint[-8:]}"
+                        display_name = f"ID:{decrypted.fingerprint}"
+                        if sender_onion:
+                             print(f"{self.colors['warn']}\n[*] Message from unknown ID: {decrypted.fingerprint}")
+                             print(f"[*] Sender's Onion: {sender_onion}")
+                    else:
+                        display_name = f"{sender_name} ({decrypted.fingerprint[-8:]})"
+                else:
+                    display_name = "Unsigned Message"
 
                 prefix = ""
                 if group_id:
                     prefix = f"{Fore.YELLOW}[Group: {group_id}] "
                 
-                display_name = f"{sender_name} ({sender_defined_username})" if sender_name != sender_defined_username else sender_name
-                print(f"\n{prefix}{self.colors['msg_sender']}[{display_name}] {self.colors['msg_text']}{msg_text}")
+                print(f"\n{prefix}{self.colors['msg_sender']}[{display_name}] <{sender_defined_username}> {self.colors['msg_text']}{msg_text}")
                 
                 if image_data:
                     try:
@@ -291,7 +305,17 @@ class GhostChat:
                     prompt_prefix = f"{Fore.GREEN}[Chat: {self.current_chat}] "
                 print(f"{prompt_prefix}{self.colors['prompt']}ghostchat> {Style.RESET_ALL}", end="", flush=True)
             else:
-                pass
+                print(f"\n{self.colors['error']}[!] Received a message but could not decrypt it.")
+                print(f"{self.colors['error']}[!] GPG Status: {decrypted.status}")
+                if "no secret key" in decrypted.stderr.lower():
+                    print(f"{self.colors['info']}[*] This means the sender is using a public key you don't have the private key for.")
+                
+                prompt_prefix = ""
+                if self.current_group:
+                    prompt_prefix = f"{Fore.YELLOW}[Group: {self.current_group}] "
+                elif self.current_chat:
+                    prompt_prefix = f"{Fore.GREEN}[Chat: {self.current_chat}] "
+                print(f"{prompt_prefix}{self.colors['prompt']}ghostchat> {Style.RESET_ALL}", end="", flush=True)
 
         except Exception as e:
             pass
@@ -337,6 +361,10 @@ class GhostChat:
                         fingerprint = f_data['fingerprint']
                         break
             
+            # Allow self-send if it matches our own onion address
+            if not fingerprint and onion == self.onion_address:
+                fingerprint = self.my_fingerprint
+
             if not fingerprint:
                 print(f"{self.colors['error']}[!] No key found for {name}. Add them as a friend first.")
                 continue
@@ -345,7 +373,8 @@ class GhostChat:
                 "u": self.config.get("username", "Ghost"),
                 "m": msg,
                 "i": image_b64,
-                "g": group_id
+                "g": group_id,
+                "o": self.onion_address
             })
 
             encrypted = self.gpg.encrypt(payload, fingerprint, sign=self.my_fingerprint, always_trust=True)
